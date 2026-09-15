@@ -1,0 +1,24 @@
+# Binario compilado
+quanticshell
+
+# Archivos de configuración persistentes
+config
+aliases
+history
+
+# Configuración de herramientas
+.qoder/
+.vscode/
+.idea/
+
+# Archivos temporales y de compilación
+*.o
+*.obj
+*.exe
+*.out
+*.log
+*~
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
