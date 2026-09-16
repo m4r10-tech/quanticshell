@@ -9,50 +9,118 @@ Una shell minimalista escrita en C diseñada como proyecto educativo para aprend
 - **Prompt configurable**: Personaliza nombre de usuario, host y símbolo del prompt
 - **Directorio actual**: Muestra la ruta actual con acortamiento automático de `~` para el directorio home
 - **Colores ANSI**: Interfaz visual con colores para distinguir diferentes partes del prompt
-- **Comandos internos**: `cd`, `help`, `exit`, `config`, `alias`
+- **Comandos internos**: `cd`, `help`, `exit`, `config`, `alias`, `unalias`, `echo`, `pwd`, `export`, `unset`, `history`, `jobs`, `fg`, `bg`, `wait`, `source`
 - **Aliases persistentes**: Crea atajos que sobreviven entre sesiones
 - **Encadenamiento de comandos**: Ejecuta múltiples comandos con `;`
+- **Pipes y redirecciones nativas**: `|`, `>`, `>>`, `<` con `fork`+`execvp` directo (sin `/bin/sh`, más rápido)
+- **Globbing nativo**: `*.c`, `?.txt` vía `glob()`
+- **Variables y expansiones**: `$VAR`, `${VAR}`, `$?`, `$$`, `~`
+- **Job control**: `&`, `jobs`, `fg`, `bg`, `wait`, Ctrl+Z
 - **Historial navegable**: Usa las flechas ↑/↓ para recorrer comandos anteriores
-- **Historial persistente**: El historial se guarda y carga automáticamente
+- **Edición de línea**: ←/→, Ctrl+A/E/U/K/W, Supr, Tab-completion (comandos y ficheros), Ctrl+R (búsqueda)
+- **Historial persistente**: append por línea (rápido, hasta 500 entradas)
+- **Prompt con git y exit code**: muestra rama `(main)` sin hacer fork y `[$?]` en rojo si falla
+- **RC de arranque**: `~/.quanticshell/rc` se ejecuta al inicio (`source` disponible)
 - **Manejo de señales**: Ctrl+C cancela comandos sin cerrar la shell
-- **Ejecución de comandos externos**: Soporta pipes, redirecciones y globbing vía `/bin/sh`
 - **Modo interactivo y no interactivo**: Funciona tanto en terminal como con pipes
+- **Salida limpia por pipe**: sin banner, sin prompts y sin ANSI (respeta `NO_COLOR`), apta para scripts: `echo hola | quanticshell` → `hola`
 
 ## Instalación
 
 ### Requisitos
 
-- Compilador C compatible con C11 (GCC, Clang)
-- Sistema operativo Unix/Linux/macOS
-- make (opcional, para usar el Makefile)
+- **Para usar el binario precompilado**: Linux x86_64
+- **Para compilar desde fuente**: Compilador C compatible con C11 (GCC, Clang)
+- **Sistema operativo**: Unix/Linux/macOS
+- **Opcional**: make (para usar el Makefile)
 
-### Compilación manual
+### Opción 1: Instalación automática (recomendado)
+
+El script de instalación detecta automáticamente tu sistema y arquitectura, compila el binario y lo instala:
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/tu-usuario/quanticshell.git
+git clone https://github.com/m4r10-tech/quanticshell.git
+cd quanticshell
+
+# Ejecutar el instalador
+chmod +x install.sh
+./install.sh
+```
+
+El instalador:
+- Detecta tu sistema operativo (Linux/macOS) y arquitectura (x86_64, ARM64, ARMv7, etc.)
+- Compila el binario automáticamente
+- Crea un symlink en `~/.local/bin/` para acceso global
+- Te avisa si necesitas añadir `~/.local/bin` a tu PATH
+
+### Opción 2: Usando Makefile
+
+Si prefieres usar make:
+
+```bash
+# Clonar el repositorio
+git clone https://github.com/m4r10-tech/quanticshell.git
+cd quanticshell
+
+# Compilar e instalar
+make install
+
+# O solo compilar
+make
+```
+
+### Opción 3: Binario precompilado (solo Linux x86_64)
+
+Si estás en Linux x86_64, puedes usar el binario precompilado directamente:
+
+```bash
+# Clonar el repositorio
+git clone https://github.com/m4r10-tech/quanticshell.git
+cd quanticshell
+
+# Ejecutar directamente
+./quanticshell
+
+# O crear symlink para acceso global
+mkdir -p ~/.local/bin
+ln -sf $(pwd)/quanticshell ~/.local/bin/quanticshell
+```
+
+**Nota**: El binario precompilado solo funciona en Linux x86_64. Para otras arquitecturas o sistemas, usa la Opción 1 o 2.
+
+### Opción 4: Compilación manual
+
+Si prefieres compilar manualmente:
+
+```bash
+# Clonar el repositorio
+git clone https://github.com/m4r10-tech/quanticshell.git
 cd quanticshell
 
 # Compilar
-cc -std=c11 -Wall -Wextra -Wpedantic -o quanticshell quanticshell.c
+cc -std=c11 -Wall -Wextra -Wpedantic -O2 -o quanticshell quanticshell.c
 
 # Ejecutar
 ./quanticshell
 ```
 
-### Instalación global (opcional)
+### Acceso global
 
-Para tener `quanticshell` disponible en cualquier directorio:
+Después de cualquier método de instalación, puedes ejecutar `quanticshell` desde cualquier directorio:
 
 ```bash
-# Compilar
-cc -std=c11 -Wall -Wextra -Wpedantic -o quanticshell quanticshell.c
-
-# Copiar a ~/.local/bin (asegúrate de que esté en tu PATH)
-cp quanticshell ~/.local/bin/
-
-# Ahora puedes ejecutar desde cualquier lugar
 quanticshell
+```
+
+Si el comando no se encuentra, asegúrate de que `~/.local/bin` está en tu PATH:
+
+```bash
+# Añadir a ~/.bashrc o ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+
+# Recargar la configuración
+source ~/.bashrc
 ```
 
 ## Uso
@@ -88,6 +156,25 @@ config
 alias                    # Lista todos los aliases
 alias ll ls -la         # Crea un alias
 alias gs git status     # Otro alias
+alias gs='git status'   # También vale sintaxis bash con =
+unalias ll              # Elimina un alias
+
+# Builtins útiles
+echo hola $USER $?      # Expansión de variables y último exit code
+pwd
+export MI_VAR=123; echo $MI_VAR
+unset MI_VAR
+history                 # Ver historial (history -c para limpiar)
+
+# Jobs
+sleep 30 &
+jobs
+fg %1
+bg %1
+wait
+
+# Scripts / rc
+source ~/.quanticshell/rc
 ```
 
 ### Aliases
@@ -126,44 +213,63 @@ cc programa.c -o programa; ./programa
 sudo apt update; sudo apt upgrade
 ```
 
-### Comandos externos
+### Comandos externos (ejecutor propio, rápido)
 
-Cualquier comando que no sea interno se ejecuta mediante `/bin/sh -c`, lo que permite:
+Sin pasar por `/bin/sh` (solo se usa como fallback para `$(...)`, backticks, `&&`, `||`).
+El estado de un pipeline es el del último comando (POSIX): `false | true` → 0.
 
 ```bash
-# Pipes
+# Pipes nativos
 ls -la | grep ".c$" | wc -l
 
-# Redirecciones
+# Redirecciones nativas
 echo "hola" > archivo.txt
 cat archivo.txt >> otro.txt
+cat < archivo.txt
 
-# Globbing
+# Globbing nativo
 ls *.c
 rm *.o
 
-# Sustitución de comandos
-echo "Hoy es $(date)"
-
-# Variables de entorno
-export MI_VAR="valor"
-echo $MI_VAR
+# Expansiones propias
+echo $HOME ${USER} $? $$
+cd ~/proyectos
 ```
 
-### Historial
+### Historial y edición de línea
 
 - **↑ (flecha arriba)**: Comando anterior
 - **↓ (flecha abajo)**: Comando siguiente
+- **← / →**: Moverse por la línea (también Ctrl+A inicio, Ctrl+E fin)
+- **Tab**: Autocompleta comandos y ficheros (pulsa dos veces para listar)
+- **Ctrl+R**: Búsqueda incremental en el historial
+- **Ctrl+U / Ctrl+K / Ctrl+W**: Borrar línea / hasta el final / palabra
+- **Supr**: Borrar bajo el cursor
 - **Ctrl+C**: Cancela el comando actual o la línea en edición
+- **Ctrl+Z**: Suspende el trabajo actual (luego `fg`)
 - **Ctrl+D**: Sale de la shell (si la línea está vacía)
 
-El historial guarda las últimas 100 líneas en `~/.quanticshell/history`.
+El historial guarda las últimas 500 líneas en `~/.quanticshell/history` (append, no reescribe el fichero).
+
+### Arranque (`rc`)
+
+Al iniciar se ejecuta `~/.quanticshell/rc` línea a línea (comentarios con `#`). Ejemplo:
+
+```bash
+# ~/.quanticshell/rc
+alias ll ls -la
+alias gs git status
+export EDITOR=vim
+```
 
 ## Estructura del proyecto
 
 ```
 quanticshell/
-├── quanticshell.c      # Código fuente completo de la shell
+├── quanticshell.c      # Código fuente completo de la shell (v2.0)
+├── quanticshell        # Binario precompilado (Linux x86_64)
+├── install.sh          # Script de instalación automática
+├── Makefile            # Makefile para compilación manual
 ├── README.md           # Esta documentación
 ├── .gitignore          # Archivos ignorados por Git
 └── LICENSE             # Licencia MIT
@@ -171,7 +277,8 @@ quanticshell/
 Archivos generados en runtime (en ~/.quanticshell/):
 ├── config              # Configuración del prompt
 ├── aliases             # Aliases persistentes
-└── history             # Historial de comandos
+├── history             # Historial de comandos (append)
+└── rc                  # Script de arranque (opcional)
 ```
 
 ## Arquitectura del código
@@ -194,12 +301,29 @@ El código está organizado en módulos funcionales dentro de un solo archivo:
 - `leer_linea_interactiva()`: Lee entrada con soporte para flechas
 - `redibujar_linea()`: Redibuja la línea actual
 
-### 4. Procesamiento de comandos
-- `ejecutar_linea()`: Parsea y ejecuta líneas con `;`
-- `despachar_segmento()`: Determina si es builtin, alias o externo
-- `ejecutar_externo()`: Ejecuta comandos externos con fork/exec
+### 4. Procesamiento de comandos (v2.0: ejecutor propio)
+- `ejecutar_linea()`: Parsea `;` respetando comillas
+- `expandir_alias_linea()`: Expansión de aliases (hasta 8 niveles)
+- `parsear_tramo()`: Tokeniza con comillas + expande `$VAR`/`${VAR}`/`$?`/`$$`/`~` + glob
+- `ejecutar_pipeline()`: Pipes nativos con `fork`/`execvp` (vía rápida sin `/bin/sh`)
+- `ejecutar_con_sh()`: Fallback a `/bin/sh -c` solo para `$(...)`, backticks, `&&`, `||`
+- Builtins en el padre (con redirecciones) o en hijo si van en pipe/background
 
-### 5. Manejo de señales
+### 5. Jobs
+- `agregar_job()` / `limpiar_jobs()` / `buscar_job()`
+- `esperar_foreground()`: `tcsetpgrp` + `waitpid` con `WUNTRACED`
+- `cmd_jobs` / `cmd_fg` / `cmd_bg` / `cmd_wait`
+
+### 6. Línea interactiva
+- `leer_linea_interactiva()`: Inserción a mitad de línea, ←/→, Ctrl+A/E/U/K/W, Supr, Ctrl+Z
+- `completar_tab()` / `recoger_candidatos()`: Completion de builtins, aliases, PATH y ficheros
+- `busqueda_reversa()`: Ctrl+R incremental
+
+### 7. Prompt rápido
+- `obtener_rama_git()`: Lee `.git/HEAD` sin hacer fork
+- `mostrar_prompt()`: Muestra `[exit-code]` en rojo + rama en amarillo
+
+### 8. Manejo de señales
 - `manejar_sigint()`: Handler para Ctrl+C
 - `restaurar_terminal()`: Restaura configuración del terminal
 
@@ -247,32 +371,80 @@ El código está organizado en módulos funcionales dentro de un solo archivo:
 - `isatty`: Detectar si es terminal
 - `read`: Lectura carácter por carácter
 
-## Limitaciones actuales
+## Limitaciones actuales (v2.0)
 
-Esta es una shell educativa con limitaciones intencionales:
+- **Sin `&&` / `||` nativos**: se delegan a `/bin/sh` (compatibilidad, no velocidad)
+- **Sin sustitución de comandos nativa**: `$(...)` y backticks van a `/bin/sh`
+- **Expansiones `${...}` complejas** (`${V:-def}`, `${#V}`): van a `/bin/sh`; `$V` y `${V}` simples son nativas
+- **Sin scripts con control de flujo**: `source`/`rc` ejecutan línea a línea (sin `if`/`for`, anti-recursión a 16 niveles)
+- **Sin job control avanzado de terminal**: no hay `disown`
 
-- **Sin control de trabajos**: No soporta `jobs`, `fg`, `bg` nativamente
-- **Sin autocompletado**: No hay tab completion
-- **Parser simple**: El parser de `;` no maneja todas las construcciones de shell
-- **Sin variables de shell**: No mantiene variables internas (usa las del entorno)
-- **Sin scripts**: No puede ejecutar scripts de la shell
-- **Sin job control avanzado**: No soporta suspensión con Ctrl+Z
+## Cómo extender el proyecto
 
-Estas limitaciones son intencionales para mantener el código simple y educativo.
+Añadir un builtin son 3 pasos en `quanticshell.c`:
+
+```c
+// 1. Función (devuelve 1, ajusta ultimo_estado: 0 = ok)
+static int cmd_mio(char **argv) {
+    printf("hola %s\n", argv[1] ? argv[1] : "mundo");
+    ultimo_estado = 0;
+    return 1;
+}
+// 2. Declararla con el resto de cmd_* y registrarla en comandos[]:
+//    {"mio", cmd_mio},
+// 3. Documentarla en cmd_help y en este README (sección Uso).
+```
+
+Puntos de extensión:
+
+- Nueva sintaxis → `dividir_puntoycoma()` / `dividir_pipes()` / `extraer_background()` + lista de fallback en `necesita_sh()`
+- Nueva expansión → solo `expandir_token()`
+- Nuevo estado global → sección "Config y estado global", con su `MAX_*`
+
+Flags útiles para scripts y tests: `quanticshell -c 'comando'`, `--version`, `--help`.
+
+## Pruebas
+
+Compilación estricta (cero warnings) y batería manual:
+
+```bash
+cc -std=c11 -Wall -Wextra -Wpedantic -O2 -o quanticshell quanticshell.c
+./quanticshell --version
+./quanticshell -c 'echo a; echo b | tr a-z A-Z'
+./quanticshell -c 'echo x > /tmp/q.txt; cat < /tmp/q.txt; echo y >> /tmp/q.txt; cat /tmp/q.txt'
+./quanticshell -c 'export A=5; echo ${A} $?; unset A'
+./quanticshell -c 'echo *.c; echo "dq $HOME"; echo '"'"'sq $HOME'"'"
+./quanticshell -c 'false; echo code:$?'
+./quanticshell -c 'sleep 0.05 &; jobs; wait; jobs; echo done'
+./quanticshell -c 'echo $(echo sub); echo ${USER:-anon}'
+```
+
+## Rendimiento
+
+Optimizaciones de velocidad (sin añadir funciones):
+
+- `-O2` en Makefile/install.sh: binario ~14% más pequeño (65KB → 55KB).
+- Prompt precalculado una vez por comando; el repintado por tecla reutiliza el buffer (antes: `getcwd` + hasta 6 `fopen` de `.git/HEAD` por pulsación → ahora 0 syscalls).
+- Rama git cacheada por `(cwd, mtime de HEAD)`: caso común = 1 `stat`, sin `fork`.
+- Cursor atrás en un solo escape `\x1b[nD` (antes: un write por columna).
+- Historial en append, el modo no interactivo no toca el historial.
+
+Medido en Debian x86_64, 200 iteraciones (incluye ruido de `fork`+`exec` del propio benchmark):
+
+- Arranque `quanticshell -c exit`: ~2,1 ms.
+- 40 builtins por invocación: ~2,4 ms (~6 µs por `echo` extra).
 
 ## Roadmap
 
-Posibles mejoras futuras:
-
-- [ ] Control de trabajos (jobs, fg, bg)
-- [ ] Autocompletado con Tab
-- [ ] Variables de shell internas
-- [ ] Ejecución de scripts
-- [ ] Colores configurables
-- [ ] Temas de prompt
-- [ ] Soporte para múltiples sesiones
-- [ ] Sincronización de historial entre sesiones
-- [ ] Makefile para facilitar la compilación
+- [x] Ejecutor propio rápido (`execvp` + pipes + redirecciones + glob)
+- [x] Autocompletado con Tab + edición de línea + Ctrl+R
+- [x] Builtins + variables + `~/.quanticshell/rc`
+- [x] Job control (`&`, `jobs`, `fg`, `bg`, `wait`, Ctrl+Z)
+- [x] Prompt con git + exit code + historial por append
+- [ ] Operadores `&&` / `||` nativos
+- [ ] Sustitución de comandos `$()` nativa
+- [ ] Variables de shell internas (no solo entorno)
+- [ ] Colores configurables / temas de prompt
 - [ ] Tests automatizados
 
 ## Contribuciones
@@ -288,7 +460,7 @@ Las contribuciones son bienvenidas. Si quieres contribuir:
 ### Estilo de código
 
 - Usa C11 estándar
-- Compila sin warnings con `-Wall -Wextra -Wpedantic`
+- Compila sin warnings con `-Wall -Wextra -Wpedantic -O2`
 - Mantén el código simple y legible
 - Añade comentarios para código complejo
 - Sigue las convenciones existentes
@@ -309,4 +481,4 @@ Para preguntas o sugerencias, abre un issue en GitHub.
 
 ---
 
-**Nota**: Este proyecto es principalmente educativo. Para uso diario, se recomienda usar shells más completas como bash, zsh o fish.
+**Nota**: v2.0 ya es usable en el día a día (pipes, redirecciones, jobs, completion, git prompt). Para sistemas críticos se recomienda igualmente bash/zsh.

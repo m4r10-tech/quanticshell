@@ -2,6 +2,10 @@
 config
 aliases
 history
+rc
+
+# Binario compilado (se genera con make; no versionarlo, usar Releases)
+quanticshell
 
 # Configuración de herramientas
 .qoder/
