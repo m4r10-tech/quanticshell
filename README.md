@@ -72,19 +72,19 @@ make
 
 ### Opción 3: Binario precompilado (solo Linux x86_64)
 
-Si estás en Linux x86_64, puedes usar el binario precompilado directamente:
+Descarga el binario de la [última release](https://github.com/m4r10-tech/quanticshell/releases/latest):
 
 ```bash
-# Clonar el repositorio
-git clone https://github.com/m4r10-tech/quanticshell.git
-cd quanticshell
+# Descargar (cambia v2.0.0 por la última versión si es necesario)
+curl -LO https://github.com/m4r10-tech/quanticshell/releases/latest/download/quanticshell-linux-x86_64
+chmod +x quanticshell-linux-x86_64
 
 # Ejecutar directamente
-./quanticshell
+./quanticshell-linux-x86_64
 
-# O crear symlink para acceso global
+# O instalarlo para acceso global
 mkdir -p ~/.local/bin
-ln -sf $(pwd)/quanticshell ~/.local/bin/quanticshell
+cp quanticshell-linux-x86_64 ~/.local/bin/quanticshell
 ```
 
 **Nota**: El binario precompilado solo funciona en Linux x86_64. Para otras arquitecturas o sistemas, usa la Opción 1 o 2.
