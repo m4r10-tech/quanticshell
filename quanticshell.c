@@ -1719,6 +1719,10 @@ static int parsear_tramo(char *tramo, ComandoParseado *out) {
 
 /* Ejecuta un builtin con redirecciones aplicadas (solo proceso padre) */
 static int ejecutar_builtin_padre(ComandoParseado *cp, int idx_builtin) {
+    /* Vaciar ANTES de redirigir: si no, la salida pendiente anterior
+       (p.ej. el "[1] pid" de un job) se volcaría al fichero redirigido. */
+    fflush(stdout);
+    fflush(stderr);
     int save_in = -1, save_out = -1;
     if (cp->entrada) {
         int fd = open(cp->entrada, O_RDONLY);

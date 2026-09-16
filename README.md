@@ -405,7 +405,13 @@ Flags útiles para scripts y tests: `quanticshell -c 'comando'`, `--version`, `-
 
 ## Pruebas
 
-Compilación estricta (cero warnings) y batería manual:
+Suite automatizada (39 casos: compilación limpia, builtins, variables, pipes, redirecciones, glob, exit codes, jobs, aliases, `source`, salida no interactiva). Corre con `HOME` aislado en un temporal: no toca tu `~/.quanticshell` real.
+
+```bash
+make test
+```
+
+Chequeo manual rápido (también cubierto por la suite):
 
 ```bash
 cc -std=c11 -Wall -Wextra -Wpedantic -O2 -o quanticshell quanticshell.c
