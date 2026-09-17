@@ -474,13 +474,38 @@ static int leer_caracter_terminal(char *caracter) {
     return -2;
 }
 
+/* Autosugerencia estilo fish: texto fantasma del historial (dim) que se
+   acepta con →. Solo display: nunca entra al buffer sin aceptar.
+   Coste por tecla: <= MAX_HISTORIAL prefix-cmps (µs). Solo con cursor al final. */
+static char sugerencia_actual[MAX_LINEA] = "";
+
+static void buscar_sugerencia(const char *linea) {
+    sugerencia_actual[0] = '\0';
+    size_t len = strlen(linea);
+    if (len == 0) return;
+    for (int i = num_historial - 1; i >= 0; i--) {
+        if (strncmp(historial[i], linea, len) == 0 && historial[i][len] != '\0') {
+            copiar_texto(sugerencia_actual, sizeof(sugerencia_actual), historial[i] + len);
+            return;
+        }
+    }
+}
+
 static void redibujar_linea_pos(const char *linea, size_t pos) {
     size_t len = strlen(linea);
+    size_t suflen = 0;
+    if (pos == len) {
+        buscar_sugerencia(linea);
+        suflen = strlen(sugerencia_actual);
+    } else {
+        sugerencia_actual[0] = '\0';
+    }
     printf("\r\x1b[2K");
     fputs(prompt_actual, stdout); /* caché: 0 syscalls (ver actualizar_prompt) */
     fputs(linea, stdout);
+    if (suflen > 0) printf("\x1b[2m%s\x1b[0m", sugerencia_actual);
     /* mover cursor atrás en un solo escape (antes: un write por columna) */
-    if (len > pos) printf("\x1b[%zuD", len - pos);
+    if (len + suflen > pos) printf("\x1b[%zuD", len + suflen - pos);
     fflush(stdout);
 }
 
@@ -506,6 +531,10 @@ static int cmd_echo(char **argv);
 static int cmd_pwd(char **argv);
 static int cmd_export(char **argv);
 static int cmd_unset(char **argv);
+static int cmd_true(char **argv);
+static int cmd_false(char **argv);
+static int cmd_noop(char **argv);
+static int cmd_test(char **argv);
 static int cmd_history(char **argv);
 static int cmd_jobs(char **argv);
 static int cmd_fg(char **argv);
@@ -524,6 +553,11 @@ static Comando comandos[] = {
     {"pwd", cmd_pwd},
     {"export", cmd_export},
     {"unset", cmd_unset},
+    {"true", cmd_true},
+    {"false", cmd_false},
+    {":", cmd_noop},
+    {"test", cmd_test},
+    {"[", cmd_test},
     {"history", cmd_history},
     {"jobs", cmd_jobs},
     {"fg", cmd_fg},
@@ -935,8 +969,19 @@ static int leer_linea_interactiva(char *linea, size_t tam_linea) {
                     else copiar_texto(linea, tam_linea, historial[indice_historial]);
                     longitud = strlen(linea); pos = longitud;
                     redibujar_linea_pos(linea, pos);
-                } else if (t == 'C') { /* right */
-                    if (pos < longitud) { pos++; redibujar_linea_pos(linea, pos); }
+                } else if (t == 'C') { /* right: aceptar sugerencia o avanzar */
+                    if (pos == longitud && sugerencia_actual[0] != '\0') {
+                        size_t sl = strlen(sugerencia_actual);
+                        if (longitud + sl < tam_linea) {
+                            memcpy(linea + longitud, sugerencia_actual, sl + 1);
+                            longitud += sl;
+                            pos = longitud;
+                        }
+                        redibujar_linea_pos(linea, pos);
+                    } else if (pos < longitud) {
+                        pos++;
+                        redibujar_linea_pos(linea, pos);
+                    }
                 } else if (t == 'D') { /* left */
                     if (pos > 0) { pos--; redibujar_linea_pos(linea, pos); }
                 } else if (t == 'H') { pos = 0; redibujar_linea_pos(linea, pos); }
@@ -1019,6 +1064,8 @@ static int cmd_help(char **argv) {
     printf("  fg [%%n]              - traer trabajo al frente\n");
     printf("  bg [%%n]              - continuar trabajo detenido\n");
     printf("  wait                 - esperar trabajos en segundo plano\n");
+    printf("  true / false / :      - builtins calientes (sin fork)\n");
+    printf("  test / [ ... ]       - comparar strings, números y ficheros\n");
     printf("  source <archivo>     - ejecutar script\n");
     printf("  exit [n]             - salir con código n\n");
     printf("Sintaxis: cmd1 | cmd2 ;  cmd > f  >>  <  &  $VAR $? ~  Tab  Ctrl+R\n");
@@ -1155,6 +1202,133 @@ static int cmd_unset(char **argv) {
     if (!argv[1]) { printf("Uso: unset <var>...\n"); ultimo_estado = 1; return 1; }
     for (int i = 1; argv[i]; i++) unsetenv(argv[i]);
     ultimo_estado = 0;
+    return 1;
+}
+
+static int cmd_true(char **argv) {
+    (void)argv;
+    ultimo_estado = 0;
+    return 1;
+}
+
+static int cmd_false(char **argv) {
+    (void)argv;
+    ultimo_estado = 1;
+    return 1;
+}
+
+static int cmd_noop(char **argv) {
+    /* `:` de POSIX: expande args (ya hecho por el parser) y siempre ok. */
+    (void)argv;
+    ultimo_estado = 0;
+    return 1;
+}
+
+/* `test`/`[` mínimo POSIX: = != -n -z -e -f -d -r -w -x, -eq -ne -gt -ge
+   -lt -le, ! expr, expr -a expr, expr -o expr. Sin paréntesis. */
+static long test_numero(const char *s, int *ok) {
+    char *fin = NULL;
+    errno = 0;
+    long v = strtol(s, &fin, 10);
+    *ok = (errno == 0 && fin != s && *fin == '\0');
+    return v;
+}
+
+static int test_primaria(int argc, char **argv) {
+    if (argc == 0) { ultimo_estado = 1; return 1; }
+    if (argc == 1) { ultimo_estado = argv[0][0] == '\0' ? 1 : 0; return 1; }
+    if (argc > 1 && strcmp(argv[0], "!") == 0) {
+        /* `! expr` vale para cualquier aridad (incluye `! a = b`). */
+        test_primaria(argc - 1, argv + 1);
+        if (ultimo_estado != 2) ultimo_estado = !ultimo_estado;
+        return 1;
+    }
+    if (argc == 2) {
+        if (strcmp(argv[0], "-n") == 0) { ultimo_estado = argv[1][0] ? 0 : 1; return 1; }
+        if (strcmp(argv[0], "-z") == 0) { ultimo_estado = argv[1][0] ? 1 : 0; return 1; }
+        if (strcmp(argv[0], "-e") == 0) { ultimo_estado = access(argv[1], F_OK) == 0 ? 0 : 1; return 1; }
+        if (strcmp(argv[0], "-f") == 0) {
+            struct stat st;
+            ultimo_estado = (stat(argv[1], &st) == 0 && S_ISREG(st.st_mode)) ? 0 : 1;
+            return 1;
+        }
+        if (strcmp(argv[0], "-d") == 0) {
+            struct stat st;
+            ultimo_estado = (stat(argv[1], &st) == 0 && S_ISDIR(st.st_mode)) ? 0 : 1;
+            return 1;
+        }
+        if (strcmp(argv[0], "-r") == 0) { ultimo_estado = access(argv[1], R_OK) == 0 ? 0 : 1; return 1; }
+        if (strcmp(argv[0], "-w") == 0) { ultimo_estado = access(argv[1], W_OK) == 0 ? 0 : 1; return 1; }
+        if (strcmp(argv[0], "-x") == 0) { ultimo_estado = access(argv[1], X_OK) == 0 ? 0 : 1; return 1; }
+        ultimo_estado = 2;
+        return 1;
+    }
+    if (argc == 3) {
+        if (strcmp(argv[1], "=") == 0) { ultimo_estado = strcmp(argv[0], argv[2]) == 0 ? 0 : 1; return 1; }
+        if (strcmp(argv[1], "!=") == 0) { ultimo_estado = strcmp(argv[0], argv[2]) != 0 ? 0 : 1; return 1; }
+        int ok1 = 0, ok2 = 0;
+        long a = test_numero(argv[0], &ok1);
+        long b = test_numero(argv[2], &ok2);
+        if (ok1 && ok2) {
+            if (strcmp(argv[1], "-eq") == 0) ultimo_estado = a == b ? 0 : 1;
+            else if (strcmp(argv[1], "-ne") == 0) ultimo_estado = a != b ? 0 : 1;
+            else if (strcmp(argv[1], "-gt") == 0) ultimo_estado = a > b ? 0 : 1;
+            else if (strcmp(argv[1], "-ge") == 0) ultimo_estado = a >= b ? 0 : 1;
+            else if (strcmp(argv[1], "-lt") == 0) ultimo_estado = a < b ? 0 : 1;
+            else if (strcmp(argv[1], "-le") == 0) ultimo_estado = a <= b ? 0 : 1;
+            else ultimo_estado = 2;
+            return 1;
+        }
+        ultimo_estado = 2;
+        return 1;
+    }
+    ultimo_estado = 2;
+    return 1;
+}
+
+static int cmd_test(char **argv) {
+    int es_corchete = strcmp(argv[0], "[") == 0;
+    int argc = 0;
+    while (argv[argc + 1]) argc++;
+    char **args = argv + 1;
+    if (es_corchete) {
+        /* `[` exige `]` final. */
+        if (argc == 0 || strcmp(argv[argc], "]") != 0) {
+            printf("[: falta `]`\n");
+            ultimo_estado = 2;
+            return 1;
+        }
+        argc--;
+    }
+    if (argc > 1) {
+        /* -a / -o de baja precedencia: partir por el último -o, si no -a. */
+        int sep = -1;
+        for (int i = 0; i < argc; i++) {
+            if (strcmp(args[i], "-o") == 0) sep = i;
+        }
+        int es_o = 1;
+        if (sep == -1) {
+            for (int i = 0; i < argc; i++) {
+                if (strcmp(args[i], "-a") == 0) { sep = i; es_o = 0; break; }
+            }
+        }
+        if (sep != -1) {
+            /* Evaluar lados con copias temporales terminadas en NULL. */
+            char *izq[MAX_ARGS], *der[MAX_ARGS];
+            int ni = 0, nd = 0;
+            for (int i = 0; i < sep && ni + 1 < MAX_ARGS; i++) izq[ni++] = args[i];
+            for (int i = sep + 1; i < argc && nd + 1 < MAX_ARGS; i++) der[nd++] = args[i];
+            izq[ni] = NULL; der[nd] = NULL;
+            test_primaria(ni, izq);
+            int r1 = ultimo_estado;
+            test_primaria(nd, der);
+            int r2 = ultimo_estado;
+            ultimo_estado = es_o ? (r1 == 0 || r2 == 0 ? 0 : 1)
+                                 : (r1 == 0 && r2 == 0 ? 0 : 1);
+            return 1;
+        }
+    }
+    test_primaria(argc, args);
     return 1;
 }
 

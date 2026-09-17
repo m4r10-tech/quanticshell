@@ -57,6 +57,23 @@ assert_eq "unset" "" "$(run 'export U=1; unset U; echo $U')"
 assert_eq "comillas dobles expanden" "dq /x" "$(run 'export H=/x; echo "dq $H"')"
 assert_eq "comillas simples no expanden" 'sq $H' "$(run "export H=/x; echo 'sq \$H'")"
 
+# --- builtins calientes (0 forks) ---
+assert_eq "true" "0" "$(run 'true; echo $?')"
+assert_eq "false" "1" "$(run 'false; echo $?')"
+assert_eq ": noop" "0" "$(run ': ignora esto; echo $?')"
+assert_eq "test =" "0" "$(run 'test a = a; echo $?')"
+assert_eq "test !=" "0" "$(run 'test a != b; echo $?')"
+assert_eq "[ ] corchetes" "0" "$(run '[ a = a ]; echo $?')"
+assert_eq "[ -n ]" "0" "$(run '[ -n x ]; echo $?')"
+assert_eq "[ -z ]" "0" "$(run '[ -z "" ]; echo $?')"
+assert_eq "[ -eq ]" "0" "$(run '[ 5 -eq 5 ]; echo $?')"
+assert_eq "[ -gt ]" "0" "$(run '[ 5 -gt 3 ]; echo $?')"
+assert_eq "[ -d . ]" "0" "$(run '[ -d . ]; echo $?')"
+assert_eq "[ -f ]" "0" "$(run "[ -f $WORK/f.txt ]; echo $?" 2>/dev/null || run 'echo x > /tmp/tsh_f; [ -f /tmp/tsh_f ]; echo $?; rm -f /tmp/tsh_f')"
+assert_eq "[ ! ]" "0" "$(run '[ ! a = b ]; echo $?')"
+assert_eq "[ -a ]" "0" "$(run '[ -n x -a 1 -eq 1 ]; echo $?')"
+assert_eq "test sin args" "1" "$(run 'test; echo $?')"
+
 # --- exit codes ---
 run 'exit 7' >/dev/null 2>&1
 assert_eq "exit N" "7" "$?"

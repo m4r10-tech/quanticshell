@@ -9,7 +9,7 @@ Una shell minimalista escrita en C diseñada como proyecto educativo para aprend
 - **Prompt configurable**: Personaliza nombre de usuario, host y símbolo del prompt
 - **Directorio actual**: Muestra la ruta actual con acortamiento automático de `~` para el directorio home
 - **Colores ANSI**: Interfaz visual con colores para distinguir diferentes partes del prompt
-- **Comandos internos**: `cd`, `help`, `exit`, `config`, `alias`, `unalias`, `echo`, `pwd`, `export`, `unset`, `history`, `jobs`, `fg`, `bg`, `wait`, `source`
+- **Comandos internos**: `cd`, `help`, `exit`, `config`, `alias`, `unalias`, `echo`, `pwd`, `export`, `unset`, `history`, `jobs`, `fg`, `bg`, `wait`, `source`, `true`, `false`, `:`, `test`/`[`
 - **Aliases persistentes**: Crea atajos que sobreviven entre sesiones
 - **Encadenamiento de comandos**: Ejecuta múltiples comandos con `;`
 - **Pipes y redirecciones nativas**: `|`, `>`, `>>`, `<` con `fork`+`execvp` directo (sin `/bin/sh`, más rápido)
@@ -18,6 +18,7 @@ Una shell minimalista escrita en C diseñada como proyecto educativo para aprend
 - **Job control**: `&`, `jobs`, `fg`, `bg`, `wait`, Ctrl+Z
 - **Historial navegable**: Usa las flechas ↑/↓ para recorrer comandos anteriores
 - **Edición de línea**: ←/→, Ctrl+A/E/U/K/W, Supr, Tab-completion (comandos y ficheros), Ctrl+R (búsqueda)
+- **Autosugerencia fantasma**: propone el final desde el historial en gris (→ para aceptar), estilo fish
 - **Historial persistente**: append por línea (rápido, hasta 500 entradas)
 - **Prompt con git y exit code**: muestra rama `(main)` sin hacer fork y `[$?]` en rojo si falla
 - **RC de arranque**: `~/.quanticshell/rc` se ejecuta al inicio (`source` disponible)
@@ -242,6 +243,7 @@ cd ~/proyectos
 - **↓ (flecha abajo)**: Comando siguiente
 - **← / →**: Moverse por la línea (también Ctrl+A inicio, Ctrl+E fin)
 - **Tab**: Autocompleta comandos y ficheros (pulsa dos veces para listar)
+- **→**: Acepta la autosugerencia fantasma (si el cursor está al final)
 - **Ctrl+R**: Búsqueda incremental en el historial
 - **Ctrl+U / Ctrl+K / Ctrl+W**: Borrar línea / hasta el final / palabra
 - **Supr**: Borrar bajo el cursor
@@ -405,10 +407,11 @@ Flags útiles para scripts y tests: `quanticshell -c 'comando'`, `--version`, `-
 
 ## Pruebas
 
-Suite automatizada (39 casos: compilación limpia, builtins, variables, pipes, redirecciones, glob, exit codes, jobs, aliases, `source`, salida no interactiva). Corre con `HOME` aislado en un temporal: no toca tu `~/.quanticshell` real.
+Suite automatizada (54 casos: compilación limpia, builtins, variables, pipes, redirecciones, glob, exit codes, jobs, aliases, `source`, salida no interactiva). Corre con `HOME` aislado en un temporal: no toca tu `~/.quanticshell` real.
 
 ```bash
 make test
+make bench   # comparativa de velocidad vs bash/dash
 ```
 
 Chequeo manual rápido (también cubierto por la suite):
@@ -427,18 +430,22 @@ cc -std=c11 -Wall -Wextra -Wpedantic -O2 -o quanticshell quanticshell.c
 
 ## Rendimiento
 
-Optimizaciones de velocidad (sin añadir funciones):
+Optimizaciones de velocidad (sin añadir funciones salvo builtins que ahorran `fork`):
 
-- `-O2` en Makefile/install.sh: binario ~14% más pequeño (65KB → 55KB).
-- Prompt precalculado una vez por comando; el repintado por tecla reutiliza el buffer (antes: `getcwd` + hasta 6 `fopen` de `.git/HEAD` por pulsación → ahora 0 syscalls).
+- `-O2` en Makefile/install.sh: binario ~60KB (bash: 1,3MB).
+- Prompt precalculado una vez por comando; el repintado por tecla reutiliza el buffer (0 syscalls por pulsación).
 - Rama git cacheada por `(cwd, mtime de HEAD)`: caso común = 1 `stat`, sin `fork`.
-- Cursor atrás en un solo escape `\x1b[nD` (antes: un write por columna).
+- Builtins calientes `true`/`false`/`:`/`test`/`[`: cada `if` de un script ahorra un proceso.
 - Historial en append, el modo no interactivo no toca el historial.
 
-Medido en Debian x86_64, 200 iteraciones (incluye ruido de `fork`+`exec` del propio benchmark):
+`make bench` en Debian x86_64, 200 iteraciones (ruido de `fork`+`exec` incluido):
 
-- Arranque `quanticshell -c exit`: ~2,1 ms.
-- 40 builtins por invocación: ~2,4 ms (~6 µs por `echo` extra).
+| prueba | quanticshell | dash | bash |
+|---|---|---|---|
+| arranque (`-c exit`) | **2,31 ms** | 2,19 ms | 2,99 ms |
+| 40 builtins/invocación | **2,55 ms** | — | 3,49 ms |
+
+Más rápido que bash en arranque y throughput, a la par con dash.
 
 ## Roadmap
 
